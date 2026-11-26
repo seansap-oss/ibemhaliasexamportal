@@ -15,6 +15,7 @@ import {
 
 type QuestionItem = {
   id: string;
+  question_type?: string;
   question_text: string;
   subject: string;
   topic: string;
@@ -37,6 +38,7 @@ export default function CbtExamRunnerPage() {
 
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [answers, setAnswers] = React.useState<Record<string, string[]>>({});
+  const [essayAnswers, setEssayAnswers] = React.useState<Record<string, string>>({});
   const [marked, setMarked] = React.useState<Set<string>>(new Set());
   const [visited, setVisited] = React.useState<Set<string>>(new Set());
   const [timeSpent, setTimeSpent] = React.useState<Record<string, number>>({});
@@ -83,6 +85,7 @@ export default function CbtExamRunnerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           answers,
+          essayAnswers,
           marked: Array.from(marked),
           timeSpent,
           elapsedSeconds,
@@ -139,10 +142,12 @@ export default function CbtExamRunnerPage() {
     document.addEventListener("visibilitychange", onVisibility);
     document.addEventListener("contextmenu", prevent);
     document.addEventListener("copy", prevent);
+    document.addEventListener("paste", prevent);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       document.removeEventListener("contextmenu", prevent);
       document.removeEventListener("copy", prevent);
+      document.removeEventListener("paste", prevent);
     };
   }, [started, submitExam]);
 
@@ -319,34 +324,54 @@ export default function CbtExamRunnerPage() {
                 {currentQ.question_text}
               </p>
 
-              <div className="mt-6 space-y-2.5">
-                {currentQ.options.map((opt) => {
-                  const selected = (answers[currentQ.id] || []).includes(opt.id);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => selectOption(currentQ.id, opt.id)}
-                      className={`flex w-full items-start gap-3 rounded-xl border p-3.5 text-left text-sm transition ${
-                        selected
-                          ? "border-[#14256f] bg-blue-50 font-bold text-[#14256f]"
-                          : "border-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span
-                        className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-black ${
+              {currentQ.question_type === "essay" || currentQ.question_type === "subjective" ? (
+                <div className="mt-6 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                    <span>Write your essay / Mains answer below (AI Graded on submit):</span>
+                    <span>
+                      {(essayAnswers[currentQ.id] || "").trim().split(/\s+/).filter(Boolean).length} words
+                    </span>
+                  </div>
+                  <textarea
+                    rows={11}
+                    value={essayAnswers[currentQ.id] || ""}
+                    onChange={(e) =>
+                      setEssayAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }))
+                    }
+                    placeholder="Type your structured answer here (Introduction, Body arguments, Examples, Conclusion)..."
+                    className="w-full select-text rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm leading-relaxed text-slate-900 focus:border-[#14256f] focus:bg-white focus:outline-none"
+                  />
+                </div>
+              ) : (
+                <div className="mt-6 space-y-2.5">
+                  {currentQ.options.map((opt) => {
+                    const selected = (answers[currentQ.id] || []).includes(opt.id);
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => selectOption(currentQ.id, opt.id)}
+                        className={`flex w-full items-start gap-3 rounded-xl border p-3.5 text-left text-sm transition ${
                           selected
-                            ? "bg-[#14256f] text-white"
-                            : "bg-slate-100 text-slate-700"
+                            ? "border-[#14256f] bg-blue-50 font-bold text-[#14256f]"
+                            : "border-slate-200 hover:bg-slate-50"
                         }`}
                       >
-                        {opt.option_key}
-                      </span>
-                      <span>{opt.option_text}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                        <span
+                          className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-black ${
+                            selected
+                              ? "bg-[#14256f] text-white"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {opt.option_key}
+                        </span>
+                        <span>{opt.option_text}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-5">
                 <div className="flex gap-2">

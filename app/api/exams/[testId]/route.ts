@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/supabase";
 import { getExamSession } from "@/lib/sso";
+import { gradeEssayWithAi } from "@/lib/ai-exam";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,7 @@ export async function POST(
     const { testId } = await context.params;
     const body = await req.json();
     const answersMap = (body.answers || {}) as Record<string, string[]>;
+    const essayAnswersMap = (body.essayAnswers || {}) as Record<string, string>;
     const markedSet = new Set<string>(body.marked || []);
     const timeSpentMap = (body.timeSpent || {}) as Record<string, number>;
     const elapsedSeconds = Number(body.elapsedSeconds || 0);
@@ -116,7 +118,7 @@ export async function POST(
     const { data: mappings } = await db
       .from("mock_test_questions")
       .select(
-        "marks_override,negative_marks_override,mock_questions(id,marks,negative_marks,mock_question_options(id,is_correct))"
+        "marks_override,negative_marks_override,mock_questions(id,question_type,question_text,explanation,marks,negative_marks,mock_question_options(id,is_correct))"
       )
       .eq("test_id", testId);
 
@@ -140,11 +142,44 @@ export async function POST(
         : m.mock_questions;
       if (!q) continue;
 
-      const marks = Number(m.marks_override ?? q.marks ?? 1);
-      const neg = Number(
-        m.negative_marks_override ?? q.negative_marks ?? test.negative_marking ?? 0
-      );
+      const isEssay = q.question_type === "essay" || q.question_type === "subjective";
+      const marks = Number(m.marks_override ?? q.marks ?? (isEssay ? 10 : 1));
+      const neg = isEssay
+        ? 0
+        : Number(m.negative_marks_override ?? q.negative_marks ?? test.negative_marking ?? 0);
       totalMarks += marks;
+
+      if (isEssay) {
+        const studentEssay = String(essayAnswersMap[q.id] || "").trim();
+        if (!studentEssay) {
+          unattemptedCount++;
+          answerRows.push({
+            question_id: q.id,
+            selected_option_ids: [],
+            marked_for_review: markedSet.has(q.id),
+            time_spent_seconds: Number(timeSpentMap[q.id] || 0),
+            awarded_marks: 0,
+          });
+        } else {
+          const aiEval = await gradeEssayWithAi({
+            question: q.question_text,
+            rubric: q.explanation,
+            studentEssay,
+            maxMarks: marks,
+          });
+          score += aiEval.score;
+          if (aiEval.score >= marks * 0.4) correctCount++;
+          else incorrectCount++;
+          answerRows.push({
+            question_id: q.id,
+            selected_option_ids: [`ESSAY_JSON::${JSON.stringify({ text: studentEssay, ...aiEval })}`],
+            marked_for_review: markedSet.has(q.id),
+            time_spent_seconds: Number(timeSpentMap[q.id] || 0),
+            awarded_marks: aiEval.score,
+          });
+        }
+        continue;
+      }
 
       const selected = Array.isArray(answersMap[q.id]) ? answersMap[q.id] : [];
       const correctIds = (q.mock_question_options || [])

@@ -49,7 +49,7 @@ export async function GET(
       db
         .from("mock_test_questions")
         .select(
-          "sort_order,mock_questions(id,question_text,explanation,subject,topic,difficulty,mock_question_options(id,option_key,option_text,is_correct,sort_order))"
+          "sort_order,mock_questions(id,question_type,question_text,explanation,subject,topic,difficulty,mock_question_options(id,option_key,option_text,is_correct,sort_order))"
         )
         .eq("test_id", attempt.test_id)
         .order("sort_order", { ascending: true }),
@@ -79,14 +79,25 @@ export async function GET(
       const opts = (q.mock_question_options || []).sort(
         (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
       );
+      const rawSelected: string[] = ans?.selected_option_ids || [];
+      let essayEvaluation: any = null;
+      if (typeof rawSelected[0] === "string" && rawSelected[0].startsWith("ESSAY_JSON::")) {
+        try {
+          essayEvaluation = JSON.parse(rawSelected[0].slice("ESSAY_JSON::".length));
+        } catch {
+          essayEvaluation = null;
+        }
+      }
       return {
         id: q.id,
+        question_type: q.question_type || "mcq_single",
         question_text: q.question_text,
         explanation: q.explanation,
         subject: q.subject,
         topic: q.topic,
         difficulty: q.difficulty,
-        selected_option_ids: ans?.selected_option_ids || [],
+        selected_option_ids: rawSelected,
+        essayEvaluation,
         awarded_marks: ans?.awarded_marks ?? 0,
         time_spent_seconds: ans?.time_spent_seconds ?? 0,
         options: opts,

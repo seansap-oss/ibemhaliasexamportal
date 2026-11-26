@@ -149,32 +149,76 @@ export default function ResultScorecardPage() {
                   <p className="mt-2 text-sm font-bold text-slate-900">
                     {q.question_text}
                   </p>
-                  <div className="mt-3 space-y-1.5">
-                    {(q.options || []).map((o: any) => {
-                      const picked = selectedSet.has(o.id);
-                      return (
-                        <div
-                          key={o.id}
-                          className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs ${
-                            o.is_correct
-                              ? "bg-emerald-50 font-bold text-emerald-800 border border-emerald-200"
-                              : picked
-                              ? "bg-red-50 font-bold text-red-700 border border-red-200"
-                              : "bg-slate-50 text-slate-600"
-                          }`}
-                        >
-                          <span>
-                            {o.option_key}) {o.option_text}
-                          </span>
-                          {o.is_correct ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          ) : picked ? (
-                            <XCircle className="h-4 w-4 text-red-600" />
-                          ) : null}
+                  {q.question_type === "essay" || q.essayEvaluation ? (
+                    <div className="mt-3 space-y-3">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-800">
+                        <b>Your Answer:</b>
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed">
+                          {q.essayEvaluation?.text || "No essay submitted."}
+                        </p>
+                      </div>
+                      {q.essayEvaluation && (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3.5 text-xs space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-black text-violet-900">
+                              AI Examiner Evaluation ({q.essayEvaluation.providerUsed || "AI"})
+                            </span>
+                            <span className="rounded-full bg-violet-700 px-2.5 py-0.5 font-black text-white">
+                              Score: {q.essayEvaluation.score} / {q.essayEvaluation.maxMarks}
+                            </span>
+                          </div>
+                          <p className="text-slate-800">{q.essayEvaluation.feedback}</p>
+                          {q.essayEvaluation.strengths?.length > 0 && (
+                            <div>
+                              <b className="text-emerald-800">Strengths:</b>
+                              <ul className="mt-1 list-disc pl-4 text-slate-700">
+                                {q.essayEvaluation.strengths.map((s: string, i: number) => (
+                                  <li key={i}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {q.essayEvaluation.improvements?.length > 0 && (
+                            <div>
+                              <b className="text-amber-800">How to Improve:</b>
+                              <ul className="mt-1 list-disc pl-4 text-slate-700">
+                                {q.essayEvaluation.improvements.map((s: string, i: number) => (
+                                  <li key={i}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-1.5">
+                      {(q.options || []).map((o: any) => {
+                        const picked = selectedSet.has(o.id);
+                        return (
+                          <div
+                            key={o.id}
+                            className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs ${
+                              o.is_correct
+                                ? "bg-emerald-50 font-bold text-emerald-800 border border-emerald-200"
+                                : picked
+                                ? "bg-red-50 font-bold text-red-700 border border-red-200"
+                                : "bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            <span>
+                              {o.option_key}) {o.option_text}
+                            </span>
+                            {o.is_correct ? (
+                              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            ) : picked ? (
+                              <XCircle className="h-4 w-4 text-red-600" />
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   {q.explanation && (
                     <p className="mt-3 rounded-xl bg-blue-50/70 p-3 text-xs text-slate-700">
                       <b>Explanation:</b> {q.explanation}

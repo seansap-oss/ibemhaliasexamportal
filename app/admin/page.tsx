@@ -2,13 +2,16 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Loader2, Plus, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Loader2, Plus, Sparkles, Upload } from "lucide-react";
 
 type DraftQ = {
+  question_type?: "mcq_single" | "essay";
   question: string;
   options: [string, string, string, string];
   correctIndex: number;
   explanation: string;
+  marks?: number;
+  rubric?: string;
 };
 
 export default function AdminExamBuilderPage() {
@@ -36,6 +39,49 @@ export default function AdminExamBuilderPage() {
   ]);
 
   const [csvText, setCsvText] = React.useState("");
+  const [aiText, setAiText] = React.useState("");
+  const [aiCount, setAiCount] = React.useState(5);
+  const [aiDifficulty, setAiDifficulty] = React.useState("medium");
+  const [aiProvider, setAiProvider] = React.useState<"auto" | "gemini" | "grok">("auto");
+  const [aiBusy, setAiBusy] = React.useState(false);
+
+  const generateWithAi = async () => {
+    setAiBusy(true);
+    setErr("");
+    setMsg("");
+    try {
+      const res = await fetch("/api/admin/ai-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: aiText,
+          count: aiCount,
+          examCategory,
+          subject,
+          difficulty: aiDifficulty,
+          provider: aiProvider,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || "AI generation failed.");
+      const generated: DraftQ[] = (data.questions || []).map((q: any) => ({
+        question_type: "mcq_single",
+        question: q.question,
+        options: q.options,
+        correctIndex: q.correctIndex,
+        explanation: q.explanation || "",
+        marks: 1,
+      }));
+      setQuestions((prev) =>
+        prev.length === 1 && !prev[0].question.trim() ? generated : [...prev, ...generated]
+      );
+      setMsg(`Generated ${generated.length} MCQs using ${data.providerUsed}! Review or click Publish Exam.`);
+    } catch (e: any) {
+      setErr(e?.message || "AI generation failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -233,6 +279,63 @@ export default function AdminExamBuilderPage() {
             </label>
           </div>
 
+          {/* AI Story / Passage -> MCQ Generator */}
+          <div className="rounded-2xl border-2 border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50/50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-black text-[#14256f]">
+                <Sparkles className="h-4 w-4 text-violet-600" />
+                AI Exam Maker (Paste Story, Article, or Notes → Auto-Generate MCQs)
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+                <select
+                  value={aiProvider}
+                  onChange={(e) => setAiProvider(e.target.value as "auto" | "gemini" | "grok")}
+                  className="rounded-lg border border-violet-200 bg-white px-2.5 py-1"
+                >
+                  <option value="auto">Auto (Gemini / Grok)</option>
+                  <option value="gemini">Gemini API</option>
+                  <option value="grok">Grok API</option>
+                </select>
+                <select
+                  value={aiCount}
+                  onChange={(e) => setAiCount(Number(e.target.value))}
+                  className="rounded-lg border border-violet-200 bg-white px-2.5 py-1"
+                >
+                  {[5, 10, 15, 20].map((n) => (
+                    <option key={n} value={n}>
+                      {n} MCQs
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value)}
+                  className="rounded-lg border border-violet-200 bg-white px-2.5 py-1"
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard / UPSC</option>
+                </select>
+              </div>
+            </div>
+            <textarea
+              rows={4}
+              value={aiText}
+              onChange={(e) => setAiText(e.target.value)}
+              placeholder="Paste any story, current affairs article, textbook chapter, or lecture notes here..."
+              className="mt-2.5 w-full rounded-xl border border-violet-200 bg-white p-3 text-xs"
+            />
+            <button
+              type="button"
+              disabled={aiBusy || aiText.trim().length < 40}
+              onClick={() => void generateWithAi()}
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-violet-700 px-4 py-2 text-xs font-black text-white hover:bg-violet-800 disabled:opacity-50"
+            >
+              {aiBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {aiBusy ? "Generating MCQs…" : "Generate MCQs with AI"}
+            </button>
+          </div>
+
           {/* Bulk Importer */}
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
             <div className="text-xs font-black text-slate-800">
@@ -254,12 +357,31 @@ export default function AdminExamBuilderPage() {
             </button>
           </div>
 
-          {/* Manual Questions */}
+          {/* Manual Questions (MCQ & Essay) */}
           <div className="space-y-4">
             {questions.map((q, qi) => (
               <div key={qi} className="rounded-2xl border border-slate-200 p-4 space-y-3">
-                <div className="text-xs font-black text-[#14256f]">
-                  Question {qi + 1}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-black text-[#14256f]">
+                    Question {qi + 1} · {q.question_type === "essay" ? "Essay / Subjective (AI Graded)" : "MCQ"}
+                  </div>
+                  {q.question_type === "essay" && (
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                      Max Marks:
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={q.marks || 10}
+                        onChange={(e) => {
+                          const copy = [...questions];
+                          copy[qi].marks = Number(e.target.value);
+                          setQuestions(copy);
+                        }}
+                        className="w-16 rounded-lg border border-slate-200 px-2 py-1"
+                      />
+                    </label>
+                  )}
                 </div>
                 <input
                   value={q.question}
@@ -268,54 +390,92 @@ export default function AdminExamBuilderPage() {
                     copy[qi].question = e.target.value;
                     setQuestions(copy);
                   }}
-                  placeholder="Enter question text..."
+                  placeholder={q.question_type === "essay" ? "Enter UPSC Mains / Essay prompt..." : "Enter question text..."}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                 />
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {q.options.map((opt, oi) => (
-                    <div key={oi} className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name={`correct-${qi}`}
-                        checked={q.correctIndex === oi}
-                        onChange={() => {
-                          const copy = [...questions];
-                          copy[qi].correctIndex = oi;
-                          setQuestions(copy);
-                        }}
-                      />
-                      <input
-                        value={opt}
-                        onChange={(e) => {
-                          const copy = [...questions];
-                          copy[qi].options[oi] = e.target.value;
-                          setQuestions(copy);
-                        }}
-                        placeholder={`Option ${String.fromCharCode(65 + oi)}`}
-                        className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
-                      />
-                    </div>
-                  ))}
-                </div>
+                {q.question_type === "essay" ? (
+                  <textarea
+                    rows={2}
+                    value={q.rubric || ""}
+                    onChange={(e) => {
+                      const copy = [...questions];
+                      copy[qi].rubric = e.target.value;
+                      setQuestions(copy);
+                    }}
+                    placeholder="Optional AI Grading Rubric / Key points (e.g. Intro 2m, Constitutional Articles 4m, Conclusion 2m)..."
+                    className="w-full rounded-xl border border-amber-200 bg-amber-50/40 px-3 py-2 text-xs"
+                  />
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {q.options.map((opt, oi) => (
+                      <div key={oi} className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name={`correct-${qi}`}
+                          checked={q.correctIndex === oi}
+                          onChange={() => {
+                            const copy = [...questions];
+                            copy[qi].correctIndex = oi;
+                            setQuestions(copy);
+                          }}
+                        />
+                        <input
+                          value={opt}
+                          onChange={(e) => {
+                            const copy = [...questions];
+                            copy[qi].options[oi] = e.target.value;
+                            setQuestions(copy);
+                          }}
+                          placeholder={`Option ${String.fromCharCode(65 + oi)}`}
+                          className="flex-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() =>
-                setQuestions((prev) => [
-                  ...prev,
-                  {
-                    question: "",
-                    options: ["", "", "", ""],
-                    correctIndex: 0,
-                    explanation: "",
-                  },
-                ])
-              }
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700"
-            >
-              <Plus className="h-4 w-4" /> Add Question
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setQuestions((prev) => [
+                    ...prev,
+                    {
+                      question_type: "mcq_single",
+                      question: "",
+                      options: ["", "", "", ""],
+                      correctIndex: 0,
+                      explanation: "",
+                      marks: 1,
+                    },
+                  ])
+                }
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700"
+              >
+                <Plus className="h-4 w-4" /> Add MCQ
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setQuestions((prev) => [
+                    ...prev,
+                    {
+                      question_type: "essay",
+                      question: "",
+                      options: ["", "", "", ""],
+                      correctIndex: 0,
+                      explanation: "",
+                      marks: 10,
+                      rubric: "",
+                    },
+                  ])
+                }
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900"
+              >
+                <FileText className="h-4 w-4" /> Add Essay / Mains Question
+              </button>
+            </div>
           </div>
 
           <button

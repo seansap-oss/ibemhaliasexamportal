@@ -88,6 +88,11 @@ export async function POST(req: NextRequest) {
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/^-|-$/g, "") || "exam";
 
+    const totalMarks = questions.reduce(
+      (sum: number, q: any) => sum + Math.max(1, Number(q.marks || (q.question_type === "essay" ? 10 : 1))),
+      0
+    );
+
     const { data: test, error: testError } = await db
       .from("mock_tests")
       .insert({
@@ -98,7 +103,7 @@ export async function POST(req: NextRequest) {
         subject,
         test_type: "full_length",
         duration_minutes: durationMinutes,
-        total_marks: questions.length,
+        total_marks: totalMarks,
         negative_marking: negativeMarking,
         passing_marks: passingMarks,
         language: "English",
@@ -120,38 +125,42 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < questions.length; i++) {
       const q = questions[i];
+      const isEssay = q.question_type === "essay" || q.type === "essay";
+      const qMarks = Math.max(1, Number(q.marks || (isEssay ? 10 : 1)));
       const { data: qRow } = await db
         .from("mock_questions")
         .insert({
           question_text: String(q.question || "").trim(),
-          question_type: "mcq_single",
+          question_type: isEssay ? "essay" : "mcq_single",
           exam: examCategory,
           subject,
           topic: q.topic || subject,
           difficulty: ["easy", "medium", "hard"].includes(String(q.difficulty || "").toLowerCase())
             ? String(q.difficulty).toLowerCase()
             : "medium",
-          explanation: q.explanation || null,
+          explanation: (isEssay ? q.rubric || q.explanation : q.explanation) || null,
           verification_status: "verified",
-          marks: 1,
-          negative_marks: negativeMarking,
+          marks: qMarks,
+          negative_marks: isEssay ? 0 : negativeMarking,
         })
         .select("id")
         .single();
 
       if (!qRow) continue;
 
-      const opts = Array.isArray(q.options) ? q.options : [];
-      if (opts.length) {
-        await db.from("mock_question_options").insert(
-          opts.map((optText: string, idx: number) => ({
-            question_id: qRow.id,
-            option_key: String.fromCharCode(65 + idx),
-            option_text: String(optText),
-            is_correct: idx === Number(q.correctIndex),
-            sort_order: idx + 1,
-          }))
-        );
+      if (!isEssay) {
+        const opts = Array.isArray(q.options) ? q.options : [];
+        if (opts.length) {
+          await db.from("mock_question_options").insert(
+            opts.map((optText: string, idx: number) => ({
+              question_id: qRow.id,
+              option_key: String.fromCharCode(65 + idx),
+              option_text: String(optText),
+              is_correct: idx === Number(q.correctIndex),
+              sort_order: idx + 1,
+            }))
+          );
+        }
       }
 
       await db.from("mock_test_questions").insert({
